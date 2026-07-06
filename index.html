@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visor RM08 | Mantenimiento escolar</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Visor de mantenimiento escolar RM08</h1>
+      <p>Consulta territorial de necesidades de mantenimiento en escuelas de la Ciudad de México</p>
+    </div>
+    <nav>
+      <a href="estadisticas.html">Estadísticas</a>
+    </nav>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="panel">
+        <h2>Filtros</h2>
+
+        <label for="filtroAlcaldia">Alcaldía</label>
+        <select id="filtroAlcaldia">
+          <option value="">Todas</option>
+        </select>
+
+        <label for="filtroNivel">Nivel educativo</label>
+        <select id="filtroNivel">
+          <option value="">Todos</option>
+        </select>
+
+        <label for="buscarCCT">Buscar por CCT</label>
+        <input id="buscarCCT" list="listaCCT" type="search" placeholder="Escribe o selecciona CCT">
+        <datalist id="listaCCT"></datalist>
+
+        <label for="buscarNombre">Buscar por escuela</label>
+        <input id="buscarNombre" list="listaNombres" type="search" placeholder="Nombre del inmueble">
+        <datalist id="listaNombres"></datalist>
+
+        <div class="buttons">
+          <button id="btnAplicar">Aplicar filtros</button>
+          <button id="btnLimpiar" class="secondary">Limpiar</button>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>Necesidades de mantenimiento</h2>
+        <p class="hint">Activa una necesidad para ver únicamente escuelas que la presentan.</p>
+        <div id="maintenanceFilters" class="checklist"></div>
+      </section>
+
+      <section class="panel compact">
+        <h2>Resumen visible</h2>
+        <div class="kpis">
+          <div><strong id="kpiTotal">0</strong><span>Escuelas</span></div>
+          <div><strong id="kpiPromedio">0.0</strong><span>Promedio</span></div>
+          <div><strong id="kpiAlta">0</strong><span>Alta y muy alta</span></div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="maparea">
+      <div id="map"></div>
+
+      <div id="legend" class="legend">
+        <div class="legend-head">
+          <strong>Índice de mantenimiento</strong>
+          <button id="toggleLegend" title="Ocultar leyenda">−</button>
+        </div>
+        <div id="legendBody">
+          <div><span class="swatch c-muy-baja"></span>0 a 6 Muy baja</div>
+          <div><span class="swatch c-baja"></span>7 a 10 Baja</div>
+          <div><span class="swatch c-media"></span>11 a 14 Media</div>
+          <div><span class="swatch c-alta"></span>15 a 18 Alta</div>
+          <div><span class="swatch c-muy-alta"></span>19 a 24 Muy alta</div>
+        </div>
+      </div>
+
+      <aside id="detailPanel" class="detail-panel">
+        <button id="closeDetail" class="close">×</button>
+        <h2 id="detailTitle">Seleccione una escuela</h2>
+        <div id="detailContent" class="detail-content">
+          <p>Haga clic en un punto del mapa para consultar la información del inmueble.</p>
+        </div>
+      </aside>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>
