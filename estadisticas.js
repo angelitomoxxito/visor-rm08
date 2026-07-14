@@ -1,14 +1,207 @@
-'use strict';
-const CFG={ csv:'data/basededatosrm08cc.csv', geo:'data/indicemantenimiento.json', f:{alcaldia:'alcaldia',nivel:'principal',nombre:'inmueble',indice:'Indice_Man',ccts:['cct1','cct2','cct3','cct4']}, maintenance:['impermeabi','interior','exterior1','loseta','ventanas','ventanas1','ventanas2','puertas','escaleras','pluviales','techos','desazolve','deterioro','concreto','tinacos','cisterna','agua','agua1','hidrosanit','sanitarios','luminarias','electrica','transforma','lamina']};
-function idx(p){const v=Number(p[CFG.f.indice]);return Number.isFinite(v)?v:CFG.maintenance.reduce((a,k)=>a+(Number(p[k])===1?1:0),0)}
-function cls(v){if(v<=6)return'Muy baja';if(v<=10)return'Baja';if(v<=14)return'Media';if(v<=18)return'Alta';return'Muy alta'}
-async function load(){let rows=[];try{const g=await fetch(CFG.geo,{cache:'no-store'}).then(r=>r.json());if(g.features?.length)rows=g.features.map(f=>f.properties||{})}catch(e){}if(!rows.length){const t=await fetch(CFG.csv,{cache:'no-store'}).then(r=>r.text());rows=Papa.parse(t,{header:true,skipEmptyLines:true}).data}return rows.map(p=>({...p,_indice:idx(p),_clase:cls(idx(p))}))}
-function group(rows,field){const m=new Map();rows.forEach(r=>{const k=String(r[field]||'Sin dato').trim()||'Sin dato';if(!m.has(k))m.set(k,[]);m.get(k).push(r)});return [...m.entries()].map(([k,a])=>({k,n:a.length,prom:avg(a.map(x=>x._indice)),max:Math.max(...a.map(x=>x._indice)),min:Math.min(...a.map(x=>x._indice))})).sort((a,b)=>b.prom-a.prom)}
-function avg(a){return a.length?a.reduce((x,y)=>x+y,0)/a.length:0}function fmt(v){return Number(v).toFixed(1)}function ccts(r){return CFG.f.ccts.map(k=>r[k]).filter(Boolean).join(', ')}
-function renderTable(id,heads,rows){document.getElementById(id).innerHTML='<thead><tr>'+heads.map(h=>`<th>${h}</th>`).join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(c=>`<td>${c}</td>`).join('')+'</tr>').join('')+'</tbody>'}
-load().then(rows=>{const vals=rows.map(r=>r._indice);document.getElementById('total').textContent=rows.length.toLocaleString('es-MX');document.getElementById('promedio').textContent=fmt(avg(vals));document.getElementById('maximo').textContent=Math.max(...vals);document.getElementById('minimo').textContent=Math.min(...vals);
-const order=['Muy baja','Baja','Media','Alta','Muy alta'];renderTable('tablaClasificacion',['Clasificación','Escuelas','Porcentaje'],order.map(k=>{const n=rows.filter(r=>r._clase===k).length;return[k,n,fmt(n*100/rows.length)+'%']}));
-renderTable('tablaNivel',['Nivel','Escuelas','Promedio','Máx.','Mín.'],group(rows,CFG.f.nivel).map(g=>[g.k,g.n,fmt(g.prom),g.max,g.min]));
-renderTable('tablaAlcaldia',['Alcaldía','Escuelas','Promedio','Máx.','Mín.'],group(rows,CFG.f.alcaldia).map(g=>[g.k,g.n,fmt(g.prom),g.max,g.min]));
-renderTable('tablaRanking',['Lugar','Escuela','CCT','Alcaldía','Nivel','Índice','Clasificación'],rows.sort((a,b)=>b._indice-a._indice).slice(0,30).map((r,i)=>[i+1,r[CFG.f.nombre]||'Sin nombre',ccts(r)||'N/D',r[CFG.f.alcaldia]||'N/D',r[CFG.f.nivel]||'N/D',r._indice,r._clase]));
-}).catch(e=>{console.error(e);alert('No se pudieron cargar las estadísticas.');});
+const DATA_PATHS = {
+  schoolsGeoJSON: "data/indicemantenimiento.json",
+  schoolsCSV: "data/basededatosrm08cc.csv"
+};
+
+const FIELDS = {
+  alcaldia: "alcaldia",
+  nivel: "principal",
+  nombre: "inmueble",
+  ccts: ["cct1", "cct2", "cct3", "cct4"],
+  x: "coord_x",
+  y: "coord_y",
+  indice: "Indice_Man"
+};
+
+const MAINTENANCE_FIELDS = [
+  "impermeabi","interior","exterior1","loseta","ventanas","ventanas1","ventanas2",
+  "puertas","escaleras","pluviales","techos","desazolve","deterioro","concreto",
+  "tinacos","cisterna","agua","agua1","hidrosanit","sanitarios","luminarias",
+  "electrica","transforma","lamina"
+];
+
+document.addEventListener("DOMContentLoaded", initStats);
+
+async function initStats(){
+  const schools = await loadSchools();
+  renderStats(schools);
+}
+
+async function loadSchools(){
+  const geo = await fetchJsonSafe(DATA_PATHS.schoolsGeoJSON);
+  if(geo && geo.features && geo.features.length){
+    return geo.features.map((f, i) => normalizeFeature(f, i)).filter(Boolean);
+  }
+
+  return new Promise((resolve, reject) => {
+    Papa.parse(DATA_PATHS.schoolsCSV, {
+      download:true,
+      header:true,
+      dynamicTyping:true,
+      skipEmptyLines:true,
+      complete: results => resolve(results.data.map((r, i) => normalizeRow(r, i)).filter(Boolean)),
+      error: err => reject(err)
+    });
+  });
+}
+
+async function fetchJsonSafe(url){
+  try{
+    const res = await fetch(url, {cache:"no-store"});
+    if(!res.ok) return null;
+    return await res.json();
+  }catch(e){
+    return null;
+  }
+}
+
+function normalizeFeature(feature, i){
+  const p = feature.properties || {};
+  return normalizeCommon(p, i);
+}
+
+function normalizeRow(row, i){
+  return normalizeCommon(row, i);
+}
+
+function normalizeCommon(p, i){
+  const indice = Number.isFinite(Number(p[FIELDS.indice]))
+    ? Number(p[FIELDS.indice])
+    : MAINTENANCE_FIELDS.reduce((sum, field) => sum + toBinary(p[field]), 0);
+
+  const ccts = FIELDS.ccts.map(f => cleanText(p[f])).filter(Boolean);
+
+  return {
+    id: cleanText(p.idinmueble) || `escuela-${i}`,
+    nombre: cleanText(p[FIELDS.nombre]) || "Sin nombre",
+    alcaldia: cleanText(p[FIELDS.alcaldia]) || "Sin dato",
+    nivel: cleanText(p[FIELDS.nivel]) || "Sin dato",
+    ccts,
+    indice,
+    clasificacion: classifyIndex(indice)
+  };
+}
+
+function toBinary(value){
+  if(value === 1 || value === "1") return 1;
+  const n = Number(value);
+  return Number.isFinite(n) && n === 1 ? 1 : 0;
+}
+
+function cleanText(value){
+  if(value === null || value === undefined) return "";
+  const s = String(value).trim();
+  if(!s || s.toLowerCase() === "nan") return "";
+  return s.replace(/\s+/g, " ");
+}
+
+function classifyIndex(v){
+  if(v <= 6) return "Muy baja";
+  if(v <= 10) return "Baja";
+  if(v <= 14) return "Media";
+  if(v <= 18) return "Alta";
+  return "Muy alta";
+}
+
+function renderStats(schools){
+  const total = schools.length;
+  const indices = schools.map(s => s.indice);
+
+  document.getElementById("stTotal").textContent = total.toLocaleString("es-MX");
+  document.getElementById("stPromedio").textContent = avg(indices).toFixed(1);
+  document.getElementById("stMin").textContent = total ? Math.min(...indices) : 0;
+  document.getElementById("stMax").textContent = total ? Math.max(...indices) : 0;
+
+  renderClassification(schools);
+  renderGroupedTable(schools, "alcaldia", "tablaAlcaldia", true);
+  renderGroupedTable(schools, "nivel", "tablaNivel", false);
+  renderRanking(schools);
+}
+
+function renderClassification(schools){
+  const order = ["Muy baja","Baja","Media","Alta","Muy alta"];
+  const groups = groupBy(schools, s => s.clasificacion);
+  const total = schools.length;
+
+  document.getElementById("tablaClasificacion").innerHTML = order.map(label => {
+    const count = (groups[label] || []).length;
+    const pct = total ? (count / total * 100) : 0;
+    return `<tr>
+      <td>${label}</td>
+      <td>${count.toLocaleString("es-MX")}</td>
+      <td>
+        ${pct.toFixed(1)}%
+        <div class="bar"><span style="width:${pct}%"></span></div>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+function renderGroupedTable(schools, field, targetId, full){
+  const groups = groupBy(schools, s => s[field] || "Sin dato");
+  const rows = Object.entries(groups)
+    .map(([name, arr]) => ({
+      name,
+      total:arr.length,
+      promedio:avg(arr.map(s => s.indice)),
+      min:Math.min(...arr.map(s => s.indice)),
+      max:Math.max(...arr.map(s => s.indice)),
+      alta:arr.filter(s => s.indice >= 15).length
+    }))
+    .sort((a,b) => b.promedio - a.promedio);
+
+  document.getElementById(targetId).innerHTML = rows.map(r => {
+    if(full){
+      return `<tr>
+        <td>${escapeHtml(r.name)}</td>
+        <td>${r.total.toLocaleString("es-MX")}</td>
+        <td>${r.promedio.toFixed(1)}</td>
+        <td>${r.min}</td>
+        <td>${r.max}</td>
+        <td>${r.alta.toLocaleString("es-MX")}</td>
+      </tr>`;
+    }
+
+    return `<tr>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${r.total.toLocaleString("es-MX")}</td>
+      <td>${r.promedio.toFixed(1)}</td>
+      <td>${r.max}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderRanking(schools){
+  const rows = [...schools].sort((a,b) => b.indice - a.indice).slice(0, 25);
+  document.getElementById("tablaRanking").innerHTML = rows.map((s, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td>${escapeHtml(s.nombre)}</td>
+      <td>${escapeHtml(s.ccts.join(", ") || "Sin dato")}</td>
+      <td>${escapeHtml(s.alcaldia)}</td>
+      <td>${escapeHtml(s.nivel)}</td>
+      <td><strong>${s.indice}</strong></td>
+      <td>${s.clasificacion}</td>
+    </tr>
+  `).join("");
+}
+
+function groupBy(arr, fn){
+  return arr.reduce((acc, item) => {
+    const key = fn(item);
+    acc[key] = acc[key] || [];
+    acc[key].push(item);
+    return acc;
+  }, {});
+}
+
+function avg(arr){
+  if(!arr.length) return 0;
+  return arr.reduce((a,b) => a + Number(b || 0), 0) / arr.length;
+}
+
+function escapeHtml(str){
+  return String(str ?? "").replace(/[&<>"']/g, m => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[m]));
+}

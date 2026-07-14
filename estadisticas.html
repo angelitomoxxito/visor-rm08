@@ -1,37 +1,64 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Estadísticas RM08 | Mantenimiento escolar</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css">
 </head>
-<body class="table-page">
-  <div class="page-wrap">
-    <header class="topbar">
+<body class="stats-page">
+  <main class="stats-container">
+    <header class="stats-header">
       <div>
         <h1>Estadísticas de mantenimiento escolar RM08</h1>
-        <p>Resumen institucional con base en escuelas analizadas.</p>
+        <p>Resumen institucional de escuelas analizadas y necesidades registradas.</p>
       </div>
       <a href="index.html">Volver al visor</a>
     </header>
 
     <section class="cards">
-      <div class="card"><strong id="total">0</strong><span>Total de escuelas</span></div>
-      <div class="card"><strong id="promedio">0.0</strong><span>Promedio del índice</span></div>
-      <div class="card"><strong id="maximo">0</strong><span>Máximo</span></div>
-      <div class="card"><strong id="minimo">0</strong><span>Mínimo</span></div>
+      <div class="card"><span>Total de escuelas</span><strong id="stTotal">0</strong></div>
+      <div class="card"><span>Promedio del índice</span><strong id="stPromedio">0.0</strong></div>
+      <div class="card"><span>Índice mínimo</span><strong id="stMin">0</strong></div>
+      <div class="card"><span>Índice máximo</span><strong id="stMax">0</strong></div>
     </section>
 
-    <section class="grid2">
-      <div class="table-card"><h2>Distribución por clasificación</h2><table id="tablaClasificacion"></table></div>
-      <div class="table-card"><h2>Estadísticas por nivel educativo</h2><table id="tablaNivel"></table></div>
+    <section class="grid-two">
+      <div class="table-panel">
+        <h2>Distribución por clasificación</h2>
+        <table>
+          <thead><tr><th>Clasificación</th><th>Escuelas</th><th>Proporción</th></tr></thead>
+          <tbody id="tablaClasificacion"></tbody>
+        </table>
+      </div>
+
+      <div class="table-panel">
+        <h2>Estadísticas por nivel educativo</h2>
+        <table>
+          <thead><tr><th>Nivel</th><th>Escuelas</th><th>Promedio</th><th>Máximo</th></tr></thead>
+          <tbody id="tablaNivel"></tbody>
+        </table>
+      </div>
     </section>
 
-    <section class="table-card" style="margin-top:16px"><h2>Estadísticas por alcaldía</h2><table id="tablaAlcaldia"></table></section>
-    <section class="table-card" style="margin-top:16px"><h2>Ranking de escuelas con mayor índice</h2><table id="tablaRanking"></table></section>
-  </div>
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+    <section class="table-panel">
+      <h2>Estadísticas por alcaldía</h2>
+      <table>
+        <thead><tr><th>Alcaldía</th><th>Escuelas</th><th>Promedio</th><th>Mínimo</th><th>Máximo</th><th>Alta y muy alta</th></tr></thead>
+        <tbody id="tablaAlcaldia"></tbody>
+      </table>
+    </section>
+
+    <section class="table-panel">
+      <h2>Ranking de escuelas con mayor índice</h2>
+      <table>
+        <thead><tr><th>#</th><th>Escuela</th><th>CCT</th><th>Alcaldía</th><th>Nivel</th><th>Índice</th><th>Clasificación</th></tr></thead>
+        <tbody id="tablaRanking"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="estadisticas.js"></script>
 </body>
 </html>

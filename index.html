@@ -1,102 +1,85 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Visor RM08 | Mantenimiento escolar</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Visor integral RM08 | Infraestructura educativa</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="app">
-    <aside id="sidebar" class="sidebar">
-      <header class="brand">
-        <div>
-          <h1>RM08 CDMX</h1>
-          <p>Necesidades de mantenimiento escolar</p>
-        </div>
-        <button id="btnCollapse" class="icon-btn" title="Ocultar menú">‹</button>
-      </header>
+<header class="topbar">
+  <div><h1>Visor integral de infraestructura educativa RM08</h1><p>Mantenimiento, mejoras y potencialidad de riesgos en escuelas de la Ciudad de México</p></div>
+  <nav><a href="estadisticas.html">Estadísticas generales</a></nav>
+</header>
+<main class="layout" id="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head"><strong>Panel de consulta</strong><button id="toggleSidebar" class="icon-button" title="Ocultar menú">‹</button></div>
 
-      <section class="panel-section">
-        <div class="section-title">Filtros</div>
-        <label>Alcaldía</label>
-        <select id="filterAlcaldia"><option value="">Todas</option></select>
-        <label>Nivel educativo</label>
-        <select id="filterNivel"><option value="">Todos</option></select>
-        <label>CCT</label>
-        <input id="searchCCT" list="cctList" placeholder="Buscar CCT" />
-        <datalist id="cctList"></datalist>
-        <label>Nombre de escuela</label>
-        <input id="searchNombre" list="nombreList" placeholder="Buscar por nombre" />
-        <datalist id="nombreList"></datalist>
-        <div class="button-row">
-          <button id="btnClear" class="btn secondary">Limpiar filtros</button>
-        </div>
-      </section>
+    <section class="panel">
+      <h2>Visualización</h2>
+      <label class="inline-check"><input type="checkbox" id="toggleSchools" checked><span>Mostrar escuelas</span></label>
+      <button id="modeMaintenance" class="mode-button active" type="button">Índice de mantenimiento</button>
+    </section>
 
-      <section class="panel-section collapsible open">
-        <button class="section-toggle" data-target="maintenanceBox">Necesidades de mantenimiento <span>⌄</span></button>
-        <div id="maintenanceBox" class="toggle-content">
-          <select id="filterNeed"><option value="">Todas las necesidades</option></select>
-          <p class="hint">Muestra escuelas donde la necesidad seleccionada tiene valor 1.</p>
-        </div>
-      </section>
+    <section class="panel">
+      <h2>Filtros generales</h2>
+      <label for="filtroAlcaldia">Alcaldía</label><select id="filtroAlcaldia"><option value="">Todas</option></select>
+      <label for="filtroNivel">Nivel educativo</label><select id="filtroNivel"><option value="">Todos</option></select>
+      <label for="buscarCCT">Buscar por CCT</label><input id="buscarCCT" list="listaCCT" type="search" placeholder="Escribe o selecciona CCT"><datalist id="listaCCT"></datalist>
+      <label for="buscarNombre">Buscar por escuela</label><input id="buscarNombre" list="listaNombres" type="search" placeholder="Nombre del inmueble"><datalist id="listaNombres"></datalist>
+      <div class="buttons"><button id="btnAplicar">Aplicar filtros</button><button id="btnLimpiar" class="secondary">Limpiar</button></div>
+    </section>
 
-      <section class="panel-section collapsible open">
-        <button class="section-toggle" data-target="extrasBox">Extras <span>⌄</span></button>
-        <div id="extrasBox" class="toggle-content checks">
-          <label><input type="checkbox" id="toggleSubsidencias"> Subsidencias</label>
-          <label><input type="checkbox" id="toggleFracturamiento"> Fracturamiento</label>
-          <label><input type="checkbox" id="toggleAlcaldias" checked> Alcaldías</label>
-          <label><input type="checkbox" id="toggleAGEB"> AGEBS</label>
-        </div>
-      </section>
+    <section class="panel">
+      <h2>Necesidades de mantenimiento</h2><p class="hint">Puedes seleccionar una o varias variables. El resumen mostrará únicamente la selección activa.</p>
+      <div id="maintenanceFilters" class="checklist"></div>
+    </section>
 
-      <section class="panel-section compact">
-        <div class="section-title">Resumen visible</div>
-        <div class="stats-mini">
-          <div><strong id="statTotal">0</strong><span>Escuelas</span></div>
-          <div><strong id="statProm">0.0</strong><span>Promedio índice</span></div>
-        </div>
-        <a class="stats-link" href="estadisticas.html">Ver estadísticas</a>
-      </section>
-    </aside>
-
-    <button id="btnOpenMenu" class="open-menu hidden">Menú</button>
-    <main id="map"></main>
-
-    <aside id="infoPanel" class="info-panel hidden">
-      <button id="closeInfo" class="close-btn">×</button>
-      <div id="infoContent"></div>
-    </aside>
-
-    <div id="legend" class="legend">
-      <button id="toggleLegend" class="legend-toggle">Leyenda</button>
-      <div id="legendBody">
-        <div class="legend-title">Índice de mantenimiento</div>
-        <div><span class="swatch muy-baja"></span>Muy baja (0–6)</div>
-        <div><span class="swatch baja"></span>Baja (7–10)</div>
-        <div><span class="swatch media"></span>Media (11–14)</div>
-        <div><span class="swatch alta"></span>Alta (15–18)</div>
-        <div><span class="swatch muy-alta"></span>Muy alta (19–24)</div>
-        <div id="subLegend" class="sub-legend hidden">
-          <div class="legend-title space">Subsidencia</div>
-          <div><span class="swatch s1"></span>Muy baja (0–7 cm)</div>
-          <div><span class="swatch s2"></span>Baja (8–15 cm)</div>
-          <div><span class="swatch s3"></span>Media (16–23 cm)</div>
-          <div><span class="swatch s4"></span>Alta (24–31 cm)</div>
-          <div><span class="swatch s5"></span>Muy alta (32–40 cm)</div>
-        </div>
+    <section class="panel collapsible-panel">
+      <button id="toggleMejoras" class="collapse-title" aria-expanded="false"><span>Mejoras</span><span id="mejorasArrow">›</span></button>
+      <div id="mejorasBody" class="collapsible-body hidden">
+        <label class="inline-check"><input type="radio" name="themeMode" value="mejora_mantenimiento"><span>Programa 1, 2, 3 por mi Escuela</span></label>
+        <label class="inline-check"><input type="radio" name="themeMode" value="reforzamiento"><span>Reforzamiento estructural</span></label>
+        <label class="inline-check"><input type="radio" name="themeMode" value="ambas"><span>Escuelas con ambas mejoras</span></label>
       </div>
-    </div>
-  </div>
+    </section>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
-  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="script.js"></script>
+    <section class="panel collapsible-panel">
+      <button id="toggleRiesgos" class="collapse-title" aria-expanded="false"><span>Riesgos</span><span id="riesgosArrow">›</span></button>
+      <div id="riesgosBody" class="collapsible-body hidden">
+        <label class="inline-check"><input type="radio" name="themeMode" value="potencialidad"><span>Potencialidad territorial</span></label>
+        <label class="inline-check"><input type="radio" name="themeMode" value="atencion"><span>Índice de atención prioritaria</span></label>
+        <hr class="soft-rule">
+        <label class="inline-check"><input type="checkbox" id="toggleSubsidencias"><span>Mostrar subsidencias</span></label>
+        <label class="inline-check"><input type="checkbox" id="toggleFracturamiento"><span>Mostrar fracturamiento</span></label>
+      </div>
+    </section>
+
+    <section class="panel compact">
+      <h2 id="summaryTitle">Resumen visible</h2>
+      <div class="kpis dynamic-kpis">
+        <div><strong id="kpi1">0</strong><span id="kpiLabel1">Escuelas</span></div>
+        <div><strong id="kpi2">0.0</strong><span id="kpiLabel2">Promedio</span></div>
+        <div><strong id="kpi3">0</strong><span id="kpiLabel3">Alta y muy alta</span></div>
+        <div><strong id="kpi4">—</strong><span id="kpiLabel4">Tema</span></div>
+      </div>
+    </section>
+  </aside>
+
+  <button id="showSidebar" class="show-sidebar hidden" title="Mostrar menú">Menú</button>
+  <section class="maparea">
+    <div id="map"></div>
+    <div id="legend" class="legend"><div class="legend-head"><strong id="legendTitle">Índice de mantenimiento</strong><button id="toggleLegend">−</button></div><div id="legendBody"></div></div>
+    <div id="subsidenciaLegend" class="legend extra-legend hidden"><div class="legend-head"><strong>Subsidencia acumulada</strong><button id="toggleSubLegend">−</button></div><div id="subLegendBody"><div><span class="swatch square s-muy-bajo"></span>0 a 7 cm Muy bajo</div><div><span class="swatch square s-bajo"></span>8 a 15 cm Bajo</div><div><span class="swatch square s-medio"></span>16 a 23 cm Medio</div><div><span class="swatch square s-alto"></span>24 a 31 cm Alto</div><div><span class="swatch square s-muy-alto"></span>32 a 40 cm Muy alto</div></div></div>
+    <aside id="detailPanel" class="detail-panel"><button id="closeDetail" class="close">×</button><h2 id="detailTitle">Seleccione una escuela</h2><div id="detailContent" class="detail-content"><p>Haga clic en un punto del mapa para consultar la información.</p></div></aside>
+  </section>
+</main>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="script.js"></script>
 </body>
 </html>

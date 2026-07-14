@@ -1,281 +1,74 @@
-'use strict';
-
-const CONFIG = {
-  data: {
-    escuelasGeoJSON: 'data/indicemantenimiento.json',
-    escuelasCSV: 'data/basededatosrm08cc.csv',
-    alcaldias: 'data/alcaldias.json',
-    ageb: 'data/ageb.json',
-    subsidencias: 'data/subsidencias.json',
-    fracturamiento: 'data/fracturamiento.json'
-  },
-  fields: {
-    alcaldia: 'alcaldia', nivel: 'principal', nombre: 'inmueble', coordX: 'coord_x', coordY: 'coord_y', indice: 'Indice_Man', ccts: ['cct1','cct2','cct3','cct4']
-  },
-  maintenance: [
-    'impermeabi','interior','exterior1','loseta','ventanas','ventanas1','ventanas2','puertas','escaleras','pluviales','techos','desazolve','deterioro','concreto','tinacos','cisterna','agua','agua1','hidrosanit','sanitarios','luminarias','electrica','transforma','lamina'
-  ],
-  maintenanceLabels: {
-    impermeabi:'Impermeabilización', interior:'Pintura interior', exterior1:'Pintura exterior', loseta:'Loseta', ventanas:'Vidrios/ventanas', ventanas1:'Cancelería de aluminio/ventanas', ventanas2:'Cancelería de herrería por aluminio/ventanas', puertas:'Puertas', escaleras:'Barandales, pasillos o escaleras', pluviales:'Bajadas pluviales', techos:'Muros o techos', desazolve:'Desazolve', deterioro:'Deterioro', concreto:'Concreto', tinacos:'Tinacos', cisterna:'Cisterna', agua:'Agua', agua1:'Sistema de agua', hidrosanit:'Hidrosanitario', sanitarios:'Sanitarios', luminarias:'Luminarias', electrica:'Instalación eléctrica', transforma:'Transformador', lamina:'Lámina'
-  },
-  zoom: { alcaldiaMax: 11, agebMax: 13 }
-};
-
-const state = {
-  allSchools: [], filteredSchools: [], schoolMarkers: new Map(), selectedFracture: null,
-  layers: {}, geo: {}, filters: { alcaldia:'', nivel:'', need:'', cct:'', nombre:'' }
-};
-
-const map = L.map('map', { zoomControl: false }).setView([19.43, -99.13], 10);
-L.control.zoom({ position: 'bottomleft' }).addTo(map);
-
-const baseLayers = {
-  'OpenStreetMap': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap' }),
-  'Satélite': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, attribution: 'Tiles &copy; Esri' }),
-  'Mapa claro': L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', { maxZoom: 20, attribution: '&copy; CARTO' }),
-  'Mapa oscuro': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 20, attribution: '&copy; CARTO' })
-};
-baseLayers['Mapa claro'].addTo(map);
-L.control.layers(baseLayers, {}, { position: 'topright', collapsed: true }).addTo(map);
-
-state.layers.alcaldias = L.geoJSON(null, { style: { color:'#607d8b', weight:1.2, fill:false } });
-state.layers.ageb = L.geoJSON(null, { style: { color:'#95a5a6', weight:.8, fill:false, opacity:.65 } });
-state.layers.subsidencias = L.geoJSON(null, { style: f => ({ color:'#555', weight:.2, fillColor: colorSubsidencia(f.properties.gridcode), fillOpacity:.48 }), onEachFeature: onSubFeature });
-state.layers.fracturamiento = L.geoJSON(null, { style: { color:'#552583', weight:2.2, opacity:.85 }, onEachFeature: onFractureFeature });
-state.layers.schools = L.markerClusterGroup({ maxClusterRadius: 36, disableClusteringAtZoom: 14, spiderfyOnMaxZoom: true, showCoverageOnHover: false });
-state.layers.summary = L.layerGroup();
-
-async function init(){
-  bindUI();
-  await Promise.all([loadBoundaries(), loadExtras(), loadSchools()]);
-  populateFilters();
-  applyFilters();
-  state.layers.alcaldias.addTo(map);
-}
-
-async function loadJSON(url){
-  const res = await fetch(url, { cache:'no-store' });
-  if(!res.ok) throw new Error(`No se pudo cargar ${url}`);
-  return res.json();
-}
-async function loadBoundaries(){
-  try{ state.geo.alcaldias = await loadJSON(CONFIG.data.alcaldias); state.layers.alcaldias.addData(normalizeGeoJSON(state.geo.alcaldias)); }catch(e){ console.warn(e.message); }
-  try{ state.geo.ageb = await loadJSON(CONFIG.data.ageb); state.layers.ageb.addData(normalizeGeoJSON(state.geo.ageb)); }catch(e){ console.warn(e.message); }
-}
-async function loadExtras(){
-  try{ const sub = normalizeGeoJSON(await loadJSON(CONFIG.data.subsidencias)); state.layers.subsidencias.addData(sub); }catch(e){ console.warn(e.message); }
-  try{ const frac = normalizeGeoJSON(await loadJSON(CONFIG.data.fracturamiento)); state.layers.fracturamiento.addData(frac); }catch(e){ console.warn(e.message); }
-}
-async function loadSchools(){
-  let loaded = false;
-  try{
-    const geo = normalizeGeoJSON(await loadJSON(CONFIG.data.escuelasGeoJSON));
-    if(geo.features && geo.features.length){
-      state.allSchools = geo.features.map((f,i) => featureToSchool(f, i)).filter(Boolean); loaded = true;
-    }
-  }catch(e){ console.warn('Se usará CSV como respaldo:', e.message); }
-  if(!loaded){
-    const csv = await fetch(CONFIG.data.escuelasCSV, { cache:'no-store' }).then(r => r.text());
-    const parsed = Papa.parse(csv, { header:true, dynamicTyping:false, skipEmptyLines:true });
-    state.allSchools = parsed.data.map((row,i)=>rowToSchool(row,i)).filter(Boolean);
-  }
-}
-function featureToSchool(f,i){
-  const p = f.properties || {};
-  let coords = null;
-  if(f.geometry && f.geometry.type === 'Point') coords = f.geometry.coordinates;
-  if(!coords && p[CONFIG.fields.coordX] && p[CONFIG.fields.coordY]) coords = [Number(p[CONFIG.fields.coordX]), Number(p[CONFIG.fields.coordY])];
-  if(!coords) return null;
-  const ll = normalizePoint(coords[0], coords[1]);
-  if(!ll) return null;
-  return buildSchool(p, ll.lat, ll.lng, i);
-}
-function rowToSchool(row,i){
-  const ll = normalizePoint(Number(row[CONFIG.fields.coordX]), Number(row[CONFIG.fields.coordY]));
-  if(!ll) return null;
-  return buildSchool(row, ll.lat, ll.lng, i);
-}
-function buildSchool(p, lat, lng, id){
-  const idx = Number(p[CONFIG.fields.indice]);
-  const indice = Number.isFinite(idx) ? idx : CONFIG.maintenance.reduce((s,k)=>s + (Number(p[k]) === 1 ? 1 : 0), 0);
-  return { id, lat, lng, p, indice, clase: classifyIndex(indice), ccts: CONFIG.fields.ccts.map(k=>String(p[k]||'').trim()).filter(Boolean) };
-}
-function normalizePoint(x,y){
-  if(!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  if(Math.abs(x) <= 180 && Math.abs(y) <= 90) return { lng:x, lat:y };
-  if(Math.abs(y) <= 180 && Math.abs(x) <= 90) return { lng:y, lat:x };
-  const ll = utmToLatLng(x,y,14,true);
-  return ll && Number.isFinite(ll.lat) && Number.isFinite(ll.lng) ? ll : null;
-}
-function normalizeGeoJSON(gj){
-  if(!gj || !gj.type) return { type:'FeatureCollection', features:[] };
-  const name = gj.crs?.properties?.name || '';
-  const needsUTM = /32614|UTM/i.test(name) || hasLargeCoords(gj);
-  if(!needsUTM) return gj;
-  const copy = JSON.parse(JSON.stringify(gj));
-  copy.crs = { type:'name', properties:{ name:'EPSG:4326' } };
-  copy.features?.forEach(f => { if(f.geometry) f.geometry.coordinates = transformCoords(f.geometry.coordinates); });
-  return copy;
-}
-function hasLargeCoords(gj){
-  const f = gj.features?.[0]; let c = f?.geometry?.coordinates;
-  while(Array.isArray(c?.[0])) c = c[0];
-  return Array.isArray(c) && (Math.abs(c[0]) > 180 || Math.abs(c[1]) > 90);
-}
-function transformCoords(c){
-  if(typeof c?.[0] === 'number') { const ll = utmToLatLng(c[0], c[1], 14, true); return [ll.lng, ll.lat]; }
-  return c.map(transformCoords);
-}
-function utmToLatLng(easting,northing,zone,northern){
-  const a=6378137, e=0.081819191, e1sq=0.006739497, k0=0.9996;
-  let x=easting-500000, y=northing; if(!northern) y-=10000000;
-  const lon0=(zone-1)*6-180+3, m=y/k0, mu=m/(a*(1-e*e/4-3*Math.pow(e,4)/64-5*Math.pow(e,6)/256));
-  const e1=(1-Math.sqrt(1-e*e))/(1+Math.sqrt(1-e*e));
-  const j1=3*e1/2-27*Math.pow(e1,3)/32, j2=21*e1*e1/16-55*Math.pow(e1,4)/32, j3=151*Math.pow(e1,3)/96, j4=1097*Math.pow(e1,4)/512;
-  const fp=mu+j1*Math.sin(2*mu)+j2*Math.sin(4*mu)+j3*Math.sin(6*mu)+j4*Math.sin(8*mu);
-  const c1=e1sq*Math.pow(Math.cos(fp),2), t1=Math.pow(Math.tan(fp),2), r1=a*(1-e*e)/Math.pow(1-e*e*Math.pow(Math.sin(fp),2),1.5), n1=a/Math.sqrt(1-e*e*Math.pow(Math.sin(fp),2)), d=x/(n1*k0);
-  const q1=n1*Math.tan(fp)/r1, q2=d*d/2, q3=(5+3*t1+10*c1-4*c1*c1-9*e1sq)*Math.pow(d,4)/24, q4=(61+90*t1+298*c1+45*t1*t1-252*e1sq-3*c1*c1)*Math.pow(d,6)/720;
-  const lat=fp-q1*(q2-q3+q4);
-  const q5=d, q6=(1+2*t1+c1)*Math.pow(d,3)/6, q7=(5-2*c1+28*t1-3*c1*c1+8*e1sq+24*t1*t1)*Math.pow(d,5)/120;
-  const lon=(lon0*Math.PI/180)+(q5-q6+q7)/Math.cos(fp);
-  return { lat: lat*180/Math.PI, lng: lon*180/Math.PI };
-}
-function classifyIndex(v){
-  if(v <= 6) return 'Muy baja'; if(v <= 10) return 'Baja'; if(v <= 14) return 'Media'; if(v <= 18) return 'Alta'; return 'Muy alta';
-}
-function colorIndex(v){
-  if(v <= 6) return '#2a9d55'; if(v <= 10) return '#a6d96a'; if(v <= 14) return '#ffd65a'; if(v <= 18) return '#f28e2b'; return '#c62828';
-}
-function colorSubsidencia(g){ return ({1:'#006837',2:'#66bd63',3:'#ffd92f',4:'#fdae61',5:'#d7191c'})[Number(g)] || '#bdbdbd'; }
-function labelSubsidencia(g){ return ({1:'Muy baja (0–7 cm)',2:'Baja (8–15 cm)',3:'Media (16–23 cm)',4:'Alta (24–31 cm)',5:'Muy alta (32–40 cm)'})[Number(g)] || 'Sin clasificación'; }
-
-function populateFilters(){
-  fillSelect('filterAlcaldia', unique(state.allSchools.map(s=>s.p[CONFIG.fields.alcaldia])));
-  fillSelect('filterNivel', unique(state.allSchools.map(s=>s.p[CONFIG.fields.nivel])));
-  const need = document.getElementById('filterNeed');
-  CONFIG.maintenance.forEach(k => need.insertAdjacentHTML('beforeend', `<option value="${k}">${CONFIG.maintenanceLabels[k] || k}</option>`));
-  fillDatalist('cctList', unique(state.allSchools.flatMap(s=>s.ccts)));
-  fillDatalist('nombreList', unique(state.allSchools.map(s=>s.p[CONFIG.fields.nombre])));
-}
-function unique(arr){ return [...new Set(arr.map(v=>String(v||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es')); }
-function fillSelect(id, values){ const el=document.getElementById(id); values.forEach(v=>el.insertAdjacentHTML('beforeend', `<option value="${escapeAttr(v)}">${escapeHTML(v)}</option>`)); }
-function fillDatalist(id, values){ document.getElementById(id).innerHTML = values.map(v=>`<option value="${escapeAttr(v)}"></option>`).join(''); }
-
-function bindUI(){
-  ['filterAlcaldia','filterNivel','filterNeed'].forEach(id => document.getElementById(id).addEventListener('change', e => { state.filters[id.replace('filter','').toLowerCase()] = e.target.value; applyFilters(); if(id==='filterAlcaldia' && e.target.value) zoomToAlcaldia(e.target.value); }));
-  document.getElementById('searchCCT').addEventListener('change', e => selectByCCT(e.target.value));
-  document.getElementById('searchNombre').addEventListener('change', e => selectByName(e.target.value));
-  document.getElementById('btnClear').addEventListener('click', clearFilters);
-  document.getElementById('btnCollapse').addEventListener('click', () => { document.getElementById('sidebar').classList.add('hidden'); document.getElementById('btnOpenMenu').classList.remove('hidden'); });
-  document.getElementById('btnOpenMenu').addEventListener('click', () => { document.getElementById('sidebar').classList.remove('hidden'); document.getElementById('btnOpenMenu').classList.add('hidden'); });
-  document.getElementById('closeInfo').addEventListener('click', () => document.getElementById('infoPanel').classList.add('hidden'));
-  document.querySelectorAll('.section-toggle').forEach(b => b.addEventListener('click', () => b.closest('.collapsible').classList.toggle('open')));
-  document.getElementById('toggleLegend').addEventListener('click', () => document.getElementById('legendBody').classList.toggle('hidden'));
-  document.getElementById('toggleSubsidencias').addEventListener('change', e => toggleLayer(state.layers.subsidencias, e.target.checked, 'subLegend'));
-  document.getElementById('toggleFracturamiento').addEventListener('change', e => toggleLayer(state.layers.fracturamiento, e.target.checked));
-  document.getElementById('toggleAlcaldias').addEventListener('change', e => toggleLayer(state.layers.alcaldias, e.target.checked));
-  document.getElementById('toggleAGEB').addEventListener('change', e => toggleLayer(state.layers.ageb, e.target.checked));
-  map.on('zoomend moveend', refreshSchoolLayer);
-}
-function toggleLayer(layer,on,legendId){ on ? layer.addTo(map) : map.removeLayer(layer); if(legendId) document.getElementById(legendId).classList.toggle('hidden', !on); }
-function clearFilters(){
-  state.filters = { alcaldia:'', nivel:'', need:'', cct:'', nombre:'' };
-  ['filterAlcaldia','filterNivel','filterNeed','searchCCT','searchNombre'].forEach(id=>document.getElementById(id).value='');
-  applyFilters();
-}
-function applyFilters(){
-  const f = state.filters;
-  state.filteredSchools = state.allSchools.filter(s =>
-    (!f.alcaldia || String(s.p[CONFIG.fields.alcaldia]||'') === f.alcaldia) &&
-    (!f.nivel || String(s.p[CONFIG.fields.nivel]||'') === f.nivel) &&
-    (!f.need || Number(s.p[f.need]) === 1)
-  );
-  updateMiniStats(); refreshSchoolLayer();
-}
-function refreshSchoolLayer(){
-  map.removeLayer(state.layers.schools); map.removeLayer(state.layers.summary);
-  state.layers.schools.clearLayers(); state.layers.summary.clearLayers(); state.schoolMarkers.clear();
-  const z = map.getZoom();
-  if(z <= CONFIG.zoom.alcaldiaMax && state.geo.alcaldias?.features?.length) drawSummary(state.geo.alcaldias, CONFIG.fields.alcaldia);
-  else if(z <= CONFIG.zoom.agebMax && state.geo.ageb?.features?.length) drawSummary(state.geo.ageb, null);
-  else drawSchoolMarkers();
-}
-function drawSchoolMarkers(){
-  state.filteredSchools.forEach(s => {
-    const marker = L.circleMarker([s.lat, s.lng], { radius:7, color:'#fff', weight:1.5, fillColor:colorIndex(s.indice), fillOpacity:.95 })
-      .bindPopup(schoolPopup(s), { maxWidth:260 })
-      .on('click', () => openSchoolPanel(s));
-    state.schoolMarkers.set(s.id, marker); state.layers.schools.addLayer(marker);
-  });
-  state.layers.schools.addTo(map);
-}
-function drawSummary(geo, alcaldiaField){
-  const groups = [];
-  geo.features.forEach((f,i) => {
-    const b = L.geoJSON(f).getBounds(); if(!b.isValid()) return;
-    let schools;
-    if(alcaldiaField){ const name = bestProp(f.properties, ['NOMGEO','nomgeo','alcaldia','NOM_MUN','nombre']); schools = state.filteredSchools.filter(s => norm(s.p[CONFIG.fields.alcaldia]) === norm(name)); }
-    else { schools = state.filteredSchools.filter(s => b.contains([s.lat, s.lng])); }
-    if(schools.length) groups.push({ center:b.getCenter(), count:schools.length, avg: schools.reduce((a,s)=>a+s.indice,0)/schools.length, i });
-  });
-  groups.forEach(g => {
-    const size = Math.max(34, Math.min(62, 28 + Math.sqrt(g.count)*4));
-    const icon = L.divIcon({ html:`<div class="summary-marker" style="width:${size}px;height:${size}px;background:${colorIndex(g.avg)}">${g.count}</div>`, className:'', iconSize:[size,size] });
-    L.marker(g.center, { icon }).addTo(state.layers.summary).bindTooltip(`Escuelas: ${g.count}<br>Promedio índice: ${g.avg.toFixed(1)}`);
-  });
-  state.layers.summary.addTo(map);
-}
-function updateMiniStats(){
-  const n = state.filteredSchools.length, avg = n ? state.filteredSchools.reduce((a,s)=>a+s.indice,0)/n : 0;
-  document.getElementById('statTotal').textContent = n.toLocaleString('es-MX');
-  document.getElementById('statProm').textContent = avg.toFixed(1);
-}
-function schoolPopup(s){
-  const needs = needsOf(s).slice(0,8).map(x=>`<li>${escapeHTML(x)}</li>`).join('') || '<li>Sin necesidades registradas</li>';
-  return `<div class="popup-title">${escapeHTML(s.p[CONFIG.fields.nombre]||'Sin nombre')}</div><div class="popup-meta">CCT: ${escapeHTML(s.ccts.join(', ')||'N/D')}<br>Índice: ${s.indice} · ${s.clase}</div><details class="popup-details"><summary>Necesidades detectadas</summary><ul>${needs}</ul></details>`;
-}
-function openSchoolPanel(s){
-  const needs = needsOf(s);
-  const html = `<h2>${escapeHTML(s.p[CONFIG.fields.nombre]||'Sin nombre')}</h2><div class="sub">${escapeHTML(s.ccts.join(', ')||'CCT no disponible')}</div><span class="badge" style="background:${colorIndex(s.indice)}22;color:${colorIndex(s.indice)}">${s.clase}</span><div class="info-grid"><div><span>Alcaldía</span>${escapeHTML(s.p[CONFIG.fields.alcaldia]||'N/D')}</div><div><span>Nivel</span>${escapeHTML(s.p[CONFIG.fields.nivel]||'N/D')}</div><div><span>Índice</span>${s.indice}</div><div><span>Necesidades</span>${needs.length}</div></div><h3>Resumen</h3><p>${summaryText(s)}</p><h3>Necesidades detectadas</h3><ul class="need-list">${(needs.length?needs:['Sin necesidades registradas']).map(n=>`<li>${escapeHTML(n)}</li>`).join('')}</ul>`;
-  document.getElementById('infoContent').innerHTML = html; document.getElementById('infoPanel').classList.remove('hidden');
-}
-function needsOf(s){ return CONFIG.maintenance.filter(k => Number(s.p[k]) === 1).map(k => CONFIG.maintenanceLabels[k] || k); }
-function summaryText(s){
-  if(s.indice <= 6) return 'El inmueble presenta una prioridad baja de atención según el índice de mantenimiento.';
-  if(s.indice <= 10) return 'El inmueble presenta necesidades moderadas y puede incorporarse a programación preventiva.';
-  if(s.indice <= 14) return 'El inmueble requiere seguimiento técnico y priorización intermedia.';
-  if(s.indice <= 18) return 'El inmueble concentra varias necesidades y requiere atención prioritaria.';
-  return 'El inmueble se ubica en prioridad muy alta por concentración de necesidades de mantenimiento.';
-}
-function selectByCCT(value){ if(!value) return; const s = state.allSchools.find(x => x.ccts.some(c => norm(c) === norm(value))); if(s) focusSchool(s); }
-function selectByName(value){ if(!value) return; const s = state.allSchools.find(x => norm(x.p[CONFIG.fields.nombre]) === norm(value)); if(s) focusSchool(s); }
-function focusSchool(s){
-  state.filters.alcaldia=''; state.filters.nivel=''; state.filters.need=''; applyFilters();
-  map.setView([s.lat,s.lng], 17);
-  setTimeout(()=>{ drawSchoolMarkers(); const m = state.schoolMarkers.get(s.id); if(m){ m.openPopup(); openSchoolPanel(s); } }, 250);
-}
-function zoomToAlcaldia(name){
-  let found=null; state.layers.alcaldias.eachLayer(l => { const p=l.feature?.properties||{}; const n=bestProp(p,['NOMGEO','nomgeo','alcaldia','NOM_MUN','nombre']); if(norm(n)===norm(name)) found=l; });
-  if(found) map.fitBounds(found.getBounds(), { padding:[40,40] });
-}
-function onSubFeature(feature, layer){
-  const g = feature.properties?.gridcode;
-  layer.bindTooltip(`Subsidencia: ${labelSubsidencia(g)}`);
-}
-function onFractureFeature(feature, layer){
-  const p = feature.properties || {}; const dist = bestProp(p, ['distancia','Distancia','DISTANCIA','length','Length','Shape_Leng','Shape_Length','LONGITUD']);
-  const txt = `Fracturamiento${dist ? `<br>Distancia: ${escapeHTML(dist)}` : ''}`;
-  layer.bindTooltip(txt, { sticky:true });
-  layer.on('click', () => {
-    if(state.selectedFracture) state.selectedFracture.setStyle({ color:'#552583', weight:2.2 });
-    state.selectedFracture = layer; layer.setStyle({ color:'#111827', weight:4 });
-    try{ map.fitBounds(layer.getBounds(), { padding:[50,50], maxZoom:15 }); }catch(e){}
-    layer.bindPopup(txt).openPopup();
-  });
-}
-function bestProp(p, keys){ for(const k of keys){ if(p && p[k] !== undefined && p[k] !== null && String(p[k]).trim() !== '') return p[k]; } return ''; }
-function norm(v){ return String(v||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
-function escapeHTML(v){ return String(v ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c])); }
-function escapeAttr(v){ return escapeHTML(v); }
-
-init().catch(err => { console.error(err); alert('No se pudo iniciar el visor. Revisa la consola del navegador.'); });
+const DATA_PATHS={schoolsGeoJSON:'data/indicemantenimiento.json',schoolsCSV:'data/basededatosrm08cc.csv',alcaldias:'data/alcaldias.json',agebs:'data/ageb.json',subsidencias:'data/subsidencias.json',fracturamiento:'data/fracturamiento.json',mantenimiento:'data/mantenimiento.json',reforzamiento:'data/reforzamiento.json'};
+const FIELDS={alcaldia:'alcaldia',nivel:'principal',nombre:'inmueble',ccts:['cct1','cct2','cct3','cct4'],x:'coord_x',y:'coord_y',indice:'Indice_Man'};
+const MAINTENANCE_FIELDS=['impermeabi','interior','exterior1','loseta','ventanas','ventanas1','ventanas2','puertas','escaleras','pluviales','techos','desazolve','deterioro','concreto','tinacos','cisterna','agua','agua1','hidrosanit','sanitarios','luminarias','electrica','transforma','lamina'];
+const MAINTENANCE_LABELS={impermeabi:'Impermeabilización',interior:'Pintura interior',exterior1:'Pintura exterior',loseta:'Loseta',ventanas:'Vidrios / ventanas',ventanas1:'Cancelería de aluminio / ventanas',ventanas2:'Cancelería de herrería / ventanas',puertas:'Puertas',escaleras:'Barandales, pasillos o escaleras',pluviales:'Bajadas pluviales',techos:'Muros o techos',desazolve:'Desazolve',deterioro:'Deterioro de estructura o acabados',concreto:'Concreto',tinacos:'Tinacos',cisterna:'Cisterna',agua:'Agua potable',agua1:'Red o abastecimiento de agua',hidrosanit:'Instalación hidrosanitaria',sanitarios:'Sanitarios',luminarias:'Luminarias',electrica:'Instalación eléctrica',transforma:'Transformador',lamina:'Lámina'};
+const COLORS={'Muy baja':'#2ca25f','Baja':'#a1d99b','Media':'#ffd166','Alta':'#f97316','Muy alta':'#dc2626','Sin dato':'#94a3b8'};
+let allSchools=[],filteredSchools=[],alcaldiasGeoJSON=null,agebsGeoJSON=null,subsidenciasGeoJSON=null,fracturamientoGeoJSON=null,activeMode='mantenimiento',schoolsVisible=true,selectedFractureLayer=null;
+let schoolLayer=L.markerClusterGroup({showCoverageOnHover:false,maxClusterRadius:28,spiderfyOnMaxZoom:true,disableClusteringAtZoom:13}),alcaldiaSummaryLayer=L.layerGroup(),agebSummaryLayer=L.layerGroup(),alcaldiaBoundaryLayer=null,agebBoundaryLayer=null,subsidenciaLayer=null,fracturamientoLayer=null;
+const map=L.map('map',{zoomControl:true,preferCanvas:true}).setView([19.35,-99.13],10);
+const baseLayers={'Mapa claro':L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:20,attribution:'© OpenStreetMap © CARTO'}),'OpenStreetMap':L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}),'Satélite':L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Tiles © Esri'}),'Mapa oscuro':L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:20,attribution:'© OpenStreetMap © CARTO'})};
+baseLayers['Mapa claro'].addTo(map);L.control.layers(baseLayers,{}, {collapsed:true,position:'bottomright'}).addTo(map);schoolLayer.addTo(map);
+document.addEventListener('DOMContentLoaded',init);
+async function init(){buildMaintenanceMenu();bindUI();const [schools,alcaldias,agebs,subs,fracs,mant,ref]=await Promise.all([loadSchools(),fetchJsonSafe(DATA_PATHS.alcaldias),fetchJsonSafe(DATA_PATHS.agebs),fetchJsonSafe(DATA_PATHS.subsidencias),fetchJsonSafe(DATA_PATHS.fracturamiento),fetchJsonSafe(DATA_PATHS.mantenimiento),fetchJsonSafe(DATA_PATHS.reforzamiento)]);allSchools=schools;joinImprovements(allSchools,mant||[],ref||[]);filteredSchools=[...allSchools];alcaldiasGeoJSON=alcaldias;agebsGeoJSON=agebs;subsidenciasGeoJSON=subs;fracturamientoGeoJSON=fracs;drawBoundaries();drawExtraLayers();populateFilters();updateMap();}
+async function loadSchools(){const geo=await fetchJsonSafe(DATA_PATHS.schoolsGeoJSON);if(geo?.features?.length)return geo.features.map(normalizeFeature).filter(Boolean);return new Promise((resolve,reject)=>Papa.parse(DATA_PATHS.schoolsCSV,{download:true,header:true,dynamicTyping:true,skipEmptyLines:true,complete:r=>resolve(r.data.map(normalizeRow).filter(Boolean)),error:reject}));}
+async function fetchJsonSafe(url){try{const r=await fetch(url,{cache:'no-store'});return r.ok?await r.json():null}catch{return null}}
+function normalizeFeature(f,i){const p=f.properties||{},c=f.geometry?.coordinates||[];const lon=Number(c[0]??p[FIELDS.x]),lat=Number(c[1]??p[FIELDS.y]);return Number.isFinite(lat)&&Number.isFinite(lon)?normalizeCommon(p,lat,lon,i):null}
+function normalizeRow(p,i){const lon=Number(p[FIELDS.x]),lat=Number(p[FIELDS.y]);return Number.isFinite(lat)&&Number.isFinite(lon)?normalizeCommon(p,lat,lon,i):null}
+function normalizeCommon(p,lat,lon,i){const indice=Number.isFinite(Number(p[FIELDS.indice]))?Number(p[FIELDS.indice]):MAINTENANCE_FIELDS.reduce((a,f)=>a+toBinary(p[f]),0);return{id:cleanText(p.idinmueble)||`escuela-${i}`,lat,lon,props:p,nombre:cleanText(p[FIELDS.nombre])||'Sin nombre',alcaldia:normalizeText(p[FIELDS.alcaldia]),nivel:normalizeText(p[FIELDS.nivel]),ccts:FIELDS.ccts.map(f=>normalizeCCT(p[f])).filter(Boolean),indice,clasificacion:classifyIndex(indice),needs:MAINTENANCE_FIELDS.filter(f=>toBinary(p[f])===1),subsidenciaNivel:Number(p.subsidencia_nivel)||null,subsidenciaClase:cleanText(p.subsidencia_clase)||'Sin dato',distFractura:Number.isFinite(Number(p.dist_fractura_m))?Number(p.dist_fractura_m):null,potencialidadPuntaje:Number(p.potencialidad_puntaje)||null,potencialidadClase:cleanText(p.potencialidad_clase)||'Sin dato',atencionPuntaje:Number(p.atencion_puntaje)||null,atencionClase:cleanText(p.atencion_clase)||'Sin dato',mantenimiento:null,reforzamiento:null};}
+function joinImprovements(schools,mant,ref){const mm=new Map(),rr=new Map();mant.forEach(x=>{const c=normalizeCCT(x.cct);if(c)mm.set(c,x)});ref.forEach(x=>{const c=normalizeCCT(x.cct);if(c)rr.set(c,x)});schools.forEach(s=>{s.mantenimiento=s.ccts.map(c=>mm.get(c)).find(Boolean)||null;s.reforzamiento=s.ccts.map(c=>rr.get(c)).find(Boolean)||null;});}
+function buildMaintenanceMenu(){document.getElementById('maintenanceFilters').innerHTML=MAINTENANCE_FIELDS.map(f=>`<label><input type="checkbox" value="${f}"><span>${MAINTENANCE_LABELS[f]}</span></label>`).join('')}
+function bindUI(){q('btnAplicar').onclick=applyFilters;q('btnLimpiar').onclick=clearFilters;q('filtroAlcaldia').onchange=()=>{applyFilters();zoomToSelectedAlcaldia()};q('filtroNivel').onchange=applyFilters;q('buscarCCT').oninput=applyFilters;q('buscarNombre').oninput=applyFilters;q('buscarCCT').onchange=()=>zoomToMatchedSchool('cct');q('buscarNombre').onchange=()=>zoomToMatchedSchool('nombre');q('maintenanceFilters').onchange=()=>{setMode('mantenimiento');applyFilters()};q('toggleSchools').onchange=e=>{schoolsVisible=e.target.checked;updateVisibilityByZoom()};q('modeMaintenance').onclick=()=>setMode('mantenimiento');document.querySelectorAll('input[name="themeMode"]').forEach(r=>r.onchange=e=>setMode(e.target.value));q('toggleMejoras').onclick=()=>toggleMenu('mejorasBody','mejorasArrow','toggleMejoras');q('toggleRiesgos').onclick=()=>toggleMenu('riesgosBody','riesgosArrow','toggleRiesgos');q('toggleSubsidencias').onchange=e=>toggleSubsidencias(e.target.checked);q('toggleFracturamiento').onchange=e=>toggleFracturamiento(e.target.checked);q('closeDetail').onclick=()=>q('detailPanel').classList.remove('open');q('toggleLegend').onclick=()=>toggleBox('legendBody','toggleLegend');q('toggleSubLegend').onclick=()=>toggleBox('subLegendBody','toggleSubLegend');q('toggleSidebar').onclick=collapseSidebar;q('showSidebar').onclick=expandSidebar;map.on('zoomend',updateVisibilityByZoom)}
+function setMode(mode){activeMode=mode;q('modeMaintenance').classList.toggle('active',mode==='mantenimiento');document.querySelectorAll('input[name="themeMode"]').forEach(r=>r.checked=r.value===mode);applyFilters();renderLegend()}
+function applyFilters(){const a=q('filtroAlcaldia').value,n=q('filtroNivel').value,c=q('buscarCCT').value.trim().toLowerCase(),name=q('buscarNombre').value.trim().toLowerCase(),needs=[...document.querySelectorAll('#maintenanceFilters input:checked')].map(i=>i.value);filteredSchools=allSchools.filter(s=>{if(a&&s.alcaldia!==a)return false;if(n&&s.nivel!==n)return false;if(c&&!s.ccts.some(v=>v.toLowerCase().includes(c)))return false;if(name&&!s.nombre.toLowerCase().includes(name))return false;if(needs.length&&!needs.every(f=>s.needs.includes(f)))return false;if(activeMode==='mejora_mantenimiento'&&!s.mantenimiento)return false;if(activeMode==='reforzamiento'&&!s.reforzamiento)return false;if(activeMode==='ambas'&&!(s.mantenimiento&&s.reforzamiento))return false;return true});updateMap()}
+function clearFilters(){q('filtroAlcaldia').value='';q('filtroNivel').value='';q('buscarCCT').value='';q('buscarNombre').value='';document.querySelectorAll('#maintenanceFilters input').forEach(i=>i.checked=false);setMode('mantenimiento');filteredSchools=[...allSchools];updateMap();if(filteredSchools.length)fitToSchools(filteredSchools)}
+function updateMap(){drawSchools();drawSummaries();updateStats();renderLegend();updateVisibilityByZoom()}
+function drawSchools(){schoolLayer.clearLayers();filteredSchools.forEach(s=>{const marker=L.circleMarker([s.lat,s.lon],{radius:7,color:borderForSchool(s),weight:s.mantenimiento||s.reforzamiento?2.4:1.3,fillColor:colorForSchool(s),fillOpacity:.92});marker.bindPopup(buildPopup(s),{maxWidth:310});marker.on('click',()=>openDetail(s));schoolLayer.addLayer(marker)});if(filteredSchools.length&&!map._initialFitDone){fitToSchools(filteredSchools);map._initialFitDone=true}}
+function colorForSchool(s){if(activeMode==='potencialidad')return COLORS[s.potencialidadClase]||COLORS['Sin dato'];if(activeMode==='atencion')return COLORS[s.atencionClase]||COLORS['Sin dato'];if(activeMode==='mejora_mantenimiento')return '#2563eb';if(activeMode==='reforzamiento')return '#7c3aed';if(activeMode==='ambas')return '#111827';return COLORS[s.clasificacion]}
+function borderForSchool(s){if(s.mantenimiento&&s.reforzamiento)return '#111827';if(s.reforzamiento)return '#7c3aed';if(s.mantenimiento)return '#2563eb';return '#fff'}
+function buildPopup(s){return `<div class="popup-title">${escapeHtml(s.nombre)}</div><div class="popup-meta">CCT: ${escapeHtml(s.ccts.join(', ')||'Sin dato')}<br>Alcaldía: ${escapeHtml(s.alcaldia)}<br>${activeMetricLine(s)}</div><div class="popup-flags">${s.mantenimiento?'<span class="mini-tag blue">Mantenimiento</span>':''}${s.reforzamiento?'<span class="mini-tag purple">Estructural</span>':''}</div>`}
+function activeMetricLine(s){if(activeMode==='potencialidad')return `Potencialidad: <strong>${s.potencialidadClase}</strong>`;if(activeMode==='atencion')return `Atención prioritaria: <strong>${s.atencionClase}</strong>`;if(activeMode.startsWith('mejora')||activeMode==='reforzamiento'||activeMode==='ambas')return `Índice de mantenimiento: <strong>${s.indice}</strong>`;return `Índice: <strong>${s.indice}</strong> (${s.clasificacion})`}
+function openDetail(s){q('detailPanel').classList.add('open');q('detailTitle').textContent=s.nombre;const needs=s.needs.map(f=>`<li>${escapeHtml(MAINTENANCE_LABELS[f])}</li>`).join('')||'<li>Sin necesidades registradas</li>';const mant=s.mantenimiento?`<div class="info-card blue-card"><h3>Programa 1, 2, 3 por mi Escuela</h3><dl><dt>Estado</dt><dd>${escapeHtml(s.mantenimiento.estado||'Sin dato')}</dd><dt>Avance</dt><dd>${escapeHtml(s.mantenimiento.avance||'Sin dato')}</dd><dt>Responsable</dt><dd>${escapeHtml(s.mantenimiento.responsable||'Sin dato')}</dd><dt>Modalidad</dt><dd>${escapeHtml(s.mantenimiento.modalidad||'Sin dato')}</dd></dl><p><strong>Trabajos finales:</strong><br>${formatMultiline(s.mantenimiento.trabajos_finales)}</p></div>`:'<p class="muted-box">Sin registro en el programa de mantenimiento.</p>';const ref=s.reforzamiento?`<div class="info-card purple-card"><h3>Reforzamiento estructural</h3><dl><dt>Código</dt><dd>${escapeHtml(s.reforzamiento.codigo||'Sin dato')}</dd><dt>Intervención</dt><dd>${escapeHtml(s.reforzamiento.intervencion||'Sin dato')}</dd><dt>Dirección</dt><dd>${escapeHtml(s.reforzamiento.direccion||'Sin dato')}</dd></dl></div>`:'<p class="muted-box">Sin registro de reforzamiento estructural.</p>';q('detailContent').innerHTML=`<div class="detail-tabs"><button class="tab-btn active" data-tab="general">General</button><button class="tab-btn" data-tab="mantenimiento">Mantenimiento</button><button class="tab-btn" data-tab="mejoras">Mejoras</button><button class="tab-btn" data-tab="riesgos">Riesgos</button></div><div class="tab-pane active" data-pane="general"><dl><dt>CCT</dt><dd>${escapeHtml(s.ccts.join(', ')||'Sin dato')}</dd><dt>Alcaldía</dt><dd>${escapeHtml(s.alcaldia)}</dd><dt>Nivel</dt><dd>${escapeHtml(s.nivel)}</dd><dt>Índice</dt><dd>${s.indice}</dd><dt>Clasificación</dt><dd><span class="badge ${classSlug(s.clasificacion)}">${s.clasificacion}</span></dd></dl></div><div class="tab-pane" data-pane="mantenimiento"><p>${maintenanceSummary(s)}</p><ul class="need-list">${needs}</ul></div><div class="tab-pane" data-pane="mejoras">${mant}${ref}</div><div class="tab-pane" data-pane="riesgos"><dl><dt>Subsidencia</dt><dd>${escapeHtml(s.subsidenciaClase)}${s.subsidenciaNivel?` (nivel ${s.subsidenciaNivel})`:''}</dd><dt>Fractura más cercana</dt><dd>${s.distFractura===null?'Sin dato':`${s.distFractura.toLocaleString('es-MX')} m`}</dd><dt>Potencialidad</dt><dd><span class="badge ${classSlug(s.potencialidadClase)}">${s.potencialidadClase}</span></dd><dt>Atención prioritaria</dt><dd><span class="badge ${classSlug(s.atencionClase)}">${s.atencionClase}</span></dd></dl><p class="method-note">La potencialidad combina subsidencia y cercanía a fracturas. La atención prioritaria incorpora además el índice de mantenimiento.</p></div>`;document.querySelectorAll('.tab-btn').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab-btn').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.tab-pane').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelector(`[data-pane="${b.dataset.tab}"]`).classList.add('active')})}
+function updateStats(){const s=filteredSchools,total=s.length;let vals,title='Resumen visible',items;if(activeMode==='mantenimiento'){const selected=[...document.querySelectorAll('#maintenanceFilters input:checked')].map(i=>i.value);if(selected.length){const label=selected.map(f=>MAINTENANCE_LABELS[f]).join(' + ');title='Necesidad seleccionada';const require=s.length,base=allSchools.filter(x=>passesGeneralFilters(x)).length;items=[[require,'Con necesidad'],[base-require,'Sin necesidad'],[base?`${(require/base*100).toFixed(1)}%`:'0%','Proporción'],[selected.length,label]];}else{items=[[total,'Escuelas'],[total?avg(s.map(x=>x.indice)).toFixed(1):'0.0','Promedio'],[s.filter(x=>x.indice>=15).length,'Alta y muy alta'],[s.filter(x=>x.indice>=19).length,'Muy alta']];}}else if(activeMode==='mejora_mantenimiento'){title='Programa 1, 2, 3';items=[[total,'Escuelas'],[s.filter(x=>parseFloat(String(x.mantenimiento?.avance||'0').replace('%',''))>=100).length,'100% avance'],[s.filter(x=>/CONTRATADO/i.test(x.mantenimiento?.estado||'')).length,'Contratadas'],[`${pct(total,allSchools.filter(passesGeneralFilters).length)}%`,'De la selección']];}else if(activeMode==='reforzamiento'){title='Reforzamiento estructural';items=[[total,'Escuelas'],[unique(s.map(x=>x.alcaldia)).length,'Alcaldías'],[unique(s.map(x=>x.nivel)).length,'Niveles'],[`${pct(total,allSchools.filter(passesGeneralFilters).length)}%`,'De la selección']];}else if(activeMode==='ambas'){title='Escuelas con ambas mejoras';items=[[total,'Escuelas'],[s.filter(x=>x.indice>=15).length,'Alta y muy alta'],[s.filter(x=>x.atencionClase==='Alta'||x.atencionClase==='Muy alta').length,'Atención alta'],[`${pct(total,allSchools.filter(passesGeneralFilters).length)}%`,'De la selección']];}else{const field=activeMode==='potencialidad'?'potencialidadClase':'atencionClase';title=activeMode==='potencialidad'?'Potencialidad territorial':'Atención prioritaria';items=[[total,'Escuelas'],[s.filter(x=>x[field]==='Muy alta').length,'Muy alta'],[s.filter(x=>x[field]==='Alta').length,'Alta'],[s.filter(x=>x[field]==='Media').length,'Media']];}q('summaryTitle').textContent=title;items.forEach((it,i)=>{q(`kpi${i+1}`).textContent=it[0];q(`kpiLabel${i+1}`).textContent=it[1]})}
+function passesGeneralFilters(s){const a=q('filtroAlcaldia').value,n=q('filtroNivel').value,c=q('buscarCCT').value.trim().toLowerCase(),name=q('buscarNombre').value.trim().toLowerCase();return(!a||s.alcaldia===a)&&(!n||s.nivel===n)&&(!c||s.ccts.some(v=>v.toLowerCase().includes(c)))&&(!name||s.nombre.toLowerCase().includes(name))}
+function renderLegend(){let title='Índice de mantenimiento',rows=classificationRows();if(activeMode==='potencialidad'){title='Potencialidad territorial';rows=classificationRows()}else if(activeMode==='atencion'){title='Atención prioritaria';rows=classificationRows()}else if(activeMode==='mejora_mantenimiento'){title='Mejoras de mantenimiento';rows=[['#2563eb','Escuela beneficiada']]}else if(activeMode==='reforzamiento'){title='Reforzamiento estructural';rows=[['#7c3aed','Escuela intervenida']]}else if(activeMode==='ambas'){title='Ambas mejoras';rows=[['#111827','Mantenimiento y reforzamiento']]};q('legendTitle').textContent=title;q('legendBody').innerHTML=rows.map(([c,l])=>`<div><span class="swatch" style="background:${c}"></span>${l}</div>`).join('')}
+function classificationRows(){return[['#2ca25f','Muy baja'],['#a1d99b','Baja'],['#ffd166','Media'],['#f97316','Alta'],['#dc2626','Muy alta']]}
+function drawBoundaries(){if(alcaldiasGeoJSON)alcaldiaBoundaryLayer=L.geoJSON(alcaldiasGeoJSON,{style:{color:'#1f4e79',weight:1,fillOpacity:0,opacity:.55}}).addTo(map);if(agebsGeoJSON)agebBoundaryLayer=L.geoJSON(agebsGeoJSON,{style:{color:'#64748b',weight:.5,fillOpacity:0,opacity:.25}})}
+function drawSummaries(){alcaldiaSummaryLayer.clearLayers();agebSummaryLayer.clearLayers();if(alcaldiasGeoJSON)drawPolygonSummary(alcaldiasGeoJSON,alcaldiaSummaryLayer,'alcaldía');if(agebsGeoJSON)drawPolygonSummary(agebsGeoJSON,agebSummaryLayer,'AGEB')}
+function drawPolygonSummary(geo,layer,type){geo.features.forEach(f=>{const ss=filteredSchools.filter(s=>pointInFeature([s.lon,s.lat],f));if(!ss.length)return;addSummaryMarker(layer,getFeatureCenter(f),getAreaName(f,type),ss)})}
+function addSummaryMarker(layer,latlng,name,schools){const count=schools.length,size=Math.max(34,Math.min(64,28+Math.sqrt(count)*4)),icon=L.divIcon({className:'',html:`<div class="summary-marker" style="width:${size}px;height:${size}px">${count}</div>`,iconSize:[size,size],iconAnchor:[size/2,size/2]});L.marker(latlng,{icon}).bindPopup(`<div class="popup-title">${escapeHtml(name)}</div><div class="popup-meta">Escuelas: <strong>${count}</strong></div>`).addTo(layer)}
+function updateVisibilityByZoom(){[schoolLayer,alcaldiaSummaryLayer,agebSummaryLayer].forEach(l=>map.removeLayer(l));if(!schoolsVisible)return;const z=map.getZoom();if(z<11)alcaldiaSummaryLayer.addTo(map);else if(z<13)agebSummaryLayer.addTo(map);else schoolLayer.addTo(map)}
+function drawExtraLayers(){if(subsidenciasGeoJSON)subsidenciaLayer=L.geoJSON(subsidenciasGeoJSON,{style:styleSubsidencia,onEachFeature:(f,l)=>{const code=Number(f.properties?.gridcode);l.bindPopup(`<div class="popup-title">Subsidencia</div><div class="popup-meta">Nivel: <strong>${code}</strong><br>Clasificación: <strong>${subClass(code)}</strong></div>`)}});if(fracturamientoGeoJSON)fracturamientoLayer=L.geoJSON(fracturamientoGeoJSON,{style:fractureStyle(false),onEachFeature:onEachFracture})}
+function toggleSubsidencias(on){if(!subsidenciaLayer)return;if(on){subsidenciaLayer.addTo(map);q('subsidenciaLegend').classList.remove('hidden')}else{map.removeLayer(subsidenciaLayer);q('subsidenciaLegend').classList.add('hidden')}}
+function toggleFracturamiento(on){if(!fracturamientoLayer)return;if(on)fracturamientoLayer.addTo(map);else map.removeLayer(fracturamientoLayer)}
+function styleSubsidencia(f){const c=Number(f.properties?.gridcode);return{color:'#fff',weight:.3,opacity:.7,fillColor:COLORS[subClass(c)]||'#94a3b8',fillOpacity:.48}}
+function subClass(c){return({1:'Muy baja',2:'Baja',3:'Media',4:'Alta',5:'Muy alta'})[c]||'Sin dato'}
+function fractureStyle(selected){return{color:selected?'#0f172a':'#7c2d12',weight:selected?4:2.2,opacity:selected?1:.8}}
+function onEachFracture(f,l){const p=f.properties||{},len=Number(p.MAGNI_NUM||p.Shape_Leng||0);l.bindTooltip(len?`Longitud: ${len.toFixed(1)} m`:'Fracturamiento',{sticky:true,className:'fracture-tooltip'});l.on('click',()=>{if(selectedFractureLayer&&selectedFractureLayer!==l)selectedFractureLayer.setStyle(fractureStyle(false));selectedFractureLayer=l;l.setStyle(fractureStyle(true));l.bindPopup(`<div class="popup-title">Fracturamiento</div><div class="popup-meta">Tipo: <strong>${escapeHtml(p.TIPO||'Sin dato')}</strong><br>Longitud: <strong>${len?len.toFixed(1)+' m':'Sin dato'}</strong></div>`).openPopup()})}
+function populateFilters(){fillSelect('filtroAlcaldia',unique(allSchools.map(s=>s.alcaldia)));fillSelect('filtroNivel',unique(allSchools.map(s=>s.nivel)));q('listaCCT').innerHTML=unique(allSchools.flatMap(s=>s.ccts)).map(v=>`<option value="${escapeHtml(v)}"></option>`).join('');q('listaNombres').innerHTML=unique(allSchools.map(s=>s.nombre)).map(v=>`<option value="${escapeHtml(v)}"></option>`).join('')}
+function fillSelect(id,vals){const el=q(id),first=el.querySelector('option').outerHTML;el.innerHTML=first+vals.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}
+function zoomToMatchedSchool(type){const v=q(type==='cct'?'buscarCCT':'buscarNombre').value.trim().toLowerCase();if(!v)return;const s=filteredSchools.find(x=>type==='cct'?x.ccts.some(c=>c.toLowerCase()===v):x.nombre.toLowerCase()===v);if(s){map.setView([s.lat,s.lon],16);openDetail(s)}}
+function zoomToSelectedAlcaldia(){const a=q('filtroAlcaldia').value;if(!a)return;const ss=filteredSchools.filter(s=>s.alcaldia===a);if(ss.length)fitToSchools(ss)}
+function fitToSchools(ss){map.fitBounds(L.latLngBounds(ss.map(s=>[s.lat,s.lon])),{padding:[35,35],maxZoom:13})}
+function toggleMenu(body,arrow,button){const open=q(body).classList.contains('hidden');q(body).classList.toggle('hidden',!open);q(arrow).textContent=open?'⌄':'›';q(button).setAttribute('aria-expanded',String(open))}
+function toggleBox(body,button){const b=q(body),hidden=b.style.display==='none';b.style.display=hidden?'block':'none';q(button).textContent=hidden?'−':'+'}
+function collapseSidebar(){q('layout').classList.add('sidebar-collapsed');q('showSidebar').classList.remove('hidden');setTimeout(()=>map.invalidateSize(),220)}
+function expandSidebar(){q('layout').classList.remove('sidebar-collapsed');q('showSidebar').classList.add('hidden');setTimeout(()=>map.invalidateSize(),220)}
+function maintenanceSummary(s){if(s.indice<=6)return'Nivel bajo de necesidades; seguimiento preventivo.';if(s.indice<=10)return'Necesidades puntuales; revisión operativa.';if(s.indice<=14)return'Nivel medio; conviene priorizar visita técnica.';if(s.indice<=18)return'Alta concentración de necesidades; atención prioritaria.';return'Muy alta concentración de necesidades; intervención prioritaria y revisión integral.'}
+function pointInFeature(p,f){const g=f.geometry;if(!g)return false;if(g.type==='Polygon')return pointInPolygon(p,g.coordinates);if(g.type==='MultiPolygon')return g.coordinates.some(x=>pointInPolygon(p,x));return false}
+function pointInPolygon(p,poly){if(!pointInRing(p,poly[0]))return false;for(let i=1;i<poly.length;i++)if(pointInRing(p,poly[i]))return false;return true}
+function pointInRing([x,y],r){let inside=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const [xi,yi]=r[i],[xj,yj]=r[j];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-12)+xi))inside=!inside}return inside}
+function getFeatureCenter(f){const c=[];collectCoords(f.geometry.coordinates,c);return[avg(c.map(x=>x[1])),avg(c.map(x=>x[0]))]}
+function collectCoords(o,out){if(typeof o[0]==='number')out.push(o);else o.forEach(x=>collectCoords(x,out))}
+function getAreaName(f,fb){const p=f.properties||{};for(const k of ['alcaldia','NOMGEO','NOM_ALC','NOMBRE','nombre','CVEGEO','CVE_AGEB'])if(cleanText(p[k]))return cleanText(p[k]);return fb}
+function classifyIndex(v){return v<=6?'Muy baja':v<=10?'Baja':v<=14?'Media':v<=18?'Alta':'Muy alta'}
+function classSlug(s){return s.toLowerCase().replace(/\s+/g,'-')}
+function toBinary(v){return Number(v)===1?1:0}
+function normalizeCCT(v){return cleanText(v).replace(/\s+/g,'').toUpperCase()}
+function cleanText(v){if(v===null||v===undefined)return'';const s=String(v).trim();return!s||s.toLowerCase()==='nan'?'':s}
+function normalizeText(v){return cleanText(v).replace(/\s+/g,' ')}
+function formatMultiline(v){const s=cleanText(v);return s?escapeHtml(s).replace(/\n/g,'<br>'):'Sin dato'}
+function avg(a){return a.length?a.reduce((x,y)=>x+Number(y||0),0)/a.length:0}
+function unique(a){return[...new Set(a.filter(Boolean))].sort((x,y)=>x.localeCompare(y,'es'))}
+function pct(a,b){return b?(a/b*100).toFixed(1):'0.0'}
+function q(id){return document.getElementById(id)}
+function escapeHtml(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]))}
