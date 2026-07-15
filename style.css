@@ -92,3 +92,6 @@ button.secondary{background:#e2e8f0;color:#1e293b}
 .teal-card{border-left-color:#0f766e}
 .gold-card{border-left-color:#ca8a04}
 .compact-support{padding:8px 10px;margin:8px 0}
+
+.submenu-clear{width:100%;margin-top:10px;background:#e2e8f0;color:#334155;border:1px solid #cbd5e1}
+.submenu-clear:hover{background:#cbd5e1;color:#1e293b}
