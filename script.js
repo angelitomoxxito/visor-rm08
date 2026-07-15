@@ -20,7 +20,7 @@ function normalizeRow(p,i){const lon=Number(p[FIELDS.x]),lat=Number(p[FIELDS.y])
 function normalizeCommon(p,lat,lon,i){const indice=Number.isFinite(Number(p[FIELDS.indice]))?Number(p[FIELDS.indice]):MAINTENANCE_FIELDS.reduce((a,f)=>a+toBinary(p[f]),0);return{id:cleanText(p.idinmueble)||`escuela-${i}`,lat,lon,props:p,nombre:cleanText(p[FIELDS.nombre])||'Escuela sin nombre',alcaldia:normalizeText(p[FIELDS.alcaldia]),nivel:normalizeText(p[FIELDS.nivel]),ccts:FIELDS.ccts.map(f=>normalizeCCT(p[f])).filter(Boolean),indice,clasificacion:classifyIndex(indice),needs:MAINTENANCE_FIELDS.filter(f=>toBinary(p[f])===1),subsidenciaNivel:Number(p.subsidencia_nivel)||null,subsidenciaClase:cleanText(p.subsidencia_clase),distFractura:Number.isFinite(Number(p.dist_fractura_m))?Number(p.dist_fractura_m):null,mantenimiento:null,reforzamiento:null,famPotenciado:null,marker:null};}
 function joinImprovements(schools,mant,ref,famPot){const mm=new Map(),rr=new Map(),ff=new Map();mant.forEach(x=>{const c=normalizeCCT(x.cct);if(c)mm.set(c,x)});ref.forEach(x=>{const c=normalizeCCT(x.cct);if(c)rr.set(c,x)});famPot.forEach(x=>{const c=normalizeCCT(x.cct);if(c)ff.set(c,x)});schools.forEach(s=>{s.mantenimiento=s.ccts.map(c=>mm.get(c)).find(Boolean)||null;s.reforzamiento=s.ccts.map(c=>rr.get(c)).find(Boolean)||null;s.famPotenciado=s.ccts.map(c=>ff.get(c)).find(Boolean)||null;});}
 function buildMaintenanceMenu(){q('maintenanceFilters').innerHTML=MAINTENANCE_FIELDS.map(f=>`<label><input type="checkbox" value="${f}"><span>${MAINTENANCE_LABELS[f]}</span></label>`).join('')}
-function bindUI(){q('btnAplicar').onclick=applyFilters;q('btnLimpiar').onclick=clearFilters;q('filtroAlcaldia').onchange=()=>{applyFilters();zoomToSelectedAlcaldia()};q('filtroNivel').onchange=applyFilters;q('buscarCCT').oninput=applyFilters;q('buscarNombre').oninput=applyFilters;const runSearch=(type,e)=>{if(e.key==='Enter'){e.preventDefault();applyFilters();zoomToMatchedSchool(type)}};q('buscarCCT').addEventListener('keydown',e=>runSearch('cct',e));q('buscarNombre').addEventListener('keydown',e=>runSearch('nombre',e));q('buscarCCT').onchange=()=>zoomToMatchedSchool('cct');q('buscarNombre').onchange=()=>zoomToMatchedSchool('nombre');q('maintenanceFilters').onchange=()=>{setMode('mantenimiento');applyFilters()};q('toggleSchools').onchange=e=>{schoolsVisible=e.target.checked;saveState();updateVisibilityByZoom()};q('modeMaintenance').onclick=()=>setMode('mantenimiento');document.querySelectorAll('input[name="themeMode"]').forEach(r=>r.onchange=e=>setMode(e.target.value));q('toggleMejoras').onclick=()=>toggleMenu('mejorasBody','mejorasArrow','toggleMejoras');q('toggleRiesgos').onclick=()=>toggleMenu('riesgosBody','riesgosArrow','toggleRiesgos');q('toggleDownloads').onclick=()=>toggleMenu('downloadsBody','downloadsArrow','toggleDownloads');const clearMejoras=q('clearMejoras');if(clearMejoras)clearMejoras.onclick=clearThemeSelection;const clearRiesgos=q('clearRiesgos');if(clearRiesgos)clearRiesgos.onclick=clearThemeSelection;q('toggleSubsidencias').onchange=e=>{toggleSubsidencias(e.target.checked);saveState()};q('toggleFracturamiento').onchange=e=>{toggleFracturamiento(e.target.checked);saveState()};q('closeDetail').onclick=()=>q('detailPanel').classList.remove('open');q('toggleLegend').onclick=()=>toggleBox('legendBody','toggleLegend');q('toggleSubLegend').onclick=()=>toggleBox('subLegendBody','toggleSubLegend');q('toggleSidebar').onclick=collapseSidebar;q('showSidebar').onclick=expandSidebar;q('statsLink').onclick=saveState;map.on('zoomend',updateVisibilityByZoom)}
+function bindUI(){q('btnAplicar').onclick=applyFilters;q('btnLimpiar').onclick=clearFilters;q('filtroAlcaldia').onchange=()=>{applyFilters();zoomToSelectedAlcaldia()};q('filtroNivel').onchange=applyFilters;const runSearch=(type,e)=>{if(e.key==='Enter'){e.preventDefault();applyFilters();zoomToMatchedSchool(type)}};q('buscarCCT').addEventListener('keydown',e=>runSearch('cct',e));q('buscarNombre').addEventListener('keydown',e=>runSearch('nombre',e));q('buscarCCT').onchange=()=>zoomToMatchedSchool('cct');q('buscarNombre').onchange=()=>zoomToMatchedSchool('nombre');q('maintenanceFilters').onchange=()=>{setMode('mantenimiento');applyFilters()};q('toggleSchools').onchange=e=>{schoolsVisible=e.target.checked;saveState();updateVisibilityByZoom()};q('modeMaintenance').onclick=()=>setMode('mantenimiento');document.querySelectorAll('input[name="themeMode"]').forEach(r=>r.onchange=e=>setMode(e.target.value));q('toggleMejoras').onclick=()=>toggleMenu('mejorasBody','mejorasArrow','toggleMejoras');q('toggleRiesgos').onclick=()=>toggleMenu('riesgosBody','riesgosArrow','toggleRiesgos');q('toggleDownloads').onclick=()=>toggleMenu('downloadsBody','downloadsArrow','toggleDownloads');const clearMejoras=q('clearMejoras');if(clearMejoras)clearMejoras.onclick=clearThemeSelection;const clearRiesgos=q('clearRiesgos');if(clearRiesgos)clearRiesgos.onclick=clearThemeSelection;q('toggleSubsidencias').onchange=e=>{toggleSubsidencias(e.target.checked);saveState()};q('toggleFracturamiento').onchange=e=>{toggleFracturamiento(e.target.checked);saveState()};q('closeDetail').onclick=()=>q('detailPanel').classList.remove('open');q('toggleLegend').onclick=()=>toggleBox('legendBody','toggleLegend');q('toggleSubLegend').onclick=()=>toggleBox('subLegendBody','toggleSubLegend');q('toggleSidebar').onclick=collapseSidebar;q('showSidebar').onclick=expandSidebar;q('statsLink').onclick=saveState;map.on('zoomend',updateVisibilityByZoom)}
 function setMode(mode){activeMode=mode;q('modeMaintenance').classList.toggle('active',mode==='mantenimiento');document.querySelectorAll('input[name="themeMode"]').forEach(r=>r.checked=r.value===mode);applyFilters();renderLegend()}
 function clearThemeSelection(){
   activeMode='mantenimiento';
@@ -72,7 +72,81 @@ function fractureStyle(selected){return{color:selected?'#0f172a':'#7c2d12',weigh
 function onEachFracture(f,l){const p=f.properties||{},len=Number(p.MAGNI_NUM||p.Shape_Leng||0);l.bindTooltip(len?`Longitud: ${len.toFixed(1)} m`:'Fracturamiento',{sticky:true,className:'fracture-tooltip'});l.on('click',()=>{if(selectedFractureLayer&&selectedFractureLayer!==l)selectedFractureLayer.setStyle(fractureStyle(false));selectedFractureLayer=l;l.setStyle(fractureStyle(true));l.bindPopup(`<div class="popup-title">Fracturamiento</div><div class="popup-meta">Tipo: <strong>${escapeHtml(p.TIPO||'No registrado')}</strong><br>Longitud: <strong>${len?len.toFixed(1)+' m':'No registrada'}</strong></div>`).openPopup()})}
 function populateFilters(){fillSelect('filtroAlcaldia',unique(allSchools.map(s=>s.alcaldia)));fillSelect('filtroNivel',unique(allSchools.map(s=>s.nivel)));q('listaCCT').innerHTML=unique(allSchools.flatMap(s=>s.ccts)).map(v=>`<option value="${escapeHtml(v)}"></option>`).join('');q('listaNombres').innerHTML=unique(allSchools.map(s=>s.nombre)).map(v=>`<option value="${escapeHtml(v)}"></option>`).join('')}
 function fillSelect(id,vals){const el=q(id),first=el.querySelector('option').outerHTML;el.innerHTML=first+vals.map(v=>`<option value="${escapeHtml(v)}">${escapeHtml(v)}</option>`).join('')}
-function zoomToMatchedSchool(type){const raw=q(type==='cct'?'buscarCCT':'buscarNombre').value.trim();if(!raw)return;const v=raw.toLowerCase();let s=filteredSchools.find(x=>type==='cct'?x.ccts.some(c=>c.toLowerCase()===v):x.nombre.toLowerCase()===v);if(!s)s=filteredSchools.find(x=>type==='cct'?x.ccts.some(c=>c.toLowerCase().includes(v)):x.nombre.toLowerCase().includes(v));if(!s)return;schoolsVisible=true;q('toggleSchools').checked=true;map.setView([s.lat,s.lon],17,{animate:true});setTimeout(()=>{updateVisibilityByZoom();if(s.marker){schoolLayer.zoomToShowLayer(s.marker,()=>s.marker.openPopup())}openDetail(s)},350)}
+
+function resetSelectionsForSchoolSearch(){
+  activeMode='mantenimiento';
+  document.querySelectorAll('input[name="themeMode"]').forEach(r=>r.checked=false);
+  const modeMaintenance=q('modeMaintenance');
+  if(modeMaintenance)modeMaintenance.classList.add('active');
+
+  const alcaldia=q('filtroAlcaldia');
+  const nivel=q('filtroNivel');
+  if(alcaldia)alcaldia.value='';
+  if(nivel)nivel.value='';
+
+  document.querySelectorAll('#maintenanceFilters input').forEach(i=>i.checked=false);
+
+  schoolsVisible=true;
+  const toggle=q('toggleSchools');
+  if(toggle)toggle.checked=true;
+
+  const detail=q('detailPanel');
+  if(detail)detail.classList.remove('open');
+}
+
+function zoomToMatchedSchool(type){
+  const input=q(type==='cct'?'buscarCCT':'buscarNombre');
+  const raw=input?input.value.trim():'';
+  if(!raw)return;
+
+  const value=raw.toLowerCase();
+  let school=allSchools.find(s=>
+    type==='cct'
+      ? s.ccts.some(c=>c.toLowerCase()===value)
+      : s.nombre.toLowerCase()===value
+  );
+
+  if(!school){
+    school=allSchools.find(s=>
+      type==='cct'
+        ? s.ccts.some(c=>c.toLowerCase().includes(value))
+        : s.nombre.toLowerCase().includes(value)
+    );
+  }
+
+  if(!school)return;
+
+  resetSelectionsForSchoolSearch();
+
+  // Se conserva únicamente el texto de búsqueda utilizado.
+  if(type==='cct'){
+    q('buscarNombre').value='';
+    q('buscarCCT').value=school.ccts.find(c=>c.toLowerCase().includes(value))||raw;
+  }else{
+    q('buscarCCT').value='';
+    q('buscarNombre').value=school.nombre;
+  }
+
+  // Volver a mostrar todas las escuelas y reconstruir marcadores sin filtros anteriores.
+  filteredSchools=[...allSchools];
+  saveState();
+  updateMap();
+
+  map.setView([school.lat,school.lon],17,{animate:true});
+
+  setTimeout(()=>{
+    updateVisibilityByZoom();
+    const marker=school.marker;
+    if(marker){
+      schoolLayer.zoomToShowLayer(marker,()=>{
+        marker.openPopup();
+        openDetail(school);
+      });
+    }else{
+      openDetail(school);
+    }
+  },450);
+}
 function zoomToSelectedAlcaldia(){const a=q('filtroAlcaldia').value;if(!a)return;const ss=filteredSchools.filter(s=>s.alcaldia===a);if(ss.length)fitToSchools(ss,12)}
 function fitToSchools(ss,maxZoom=14){if(!ss.length)return;if(ss.length===1){map.setView([ss[0].lat,ss[0].lon],Math.min(maxZoom,17),{animate:true});return}map.fitBounds(L.latLngBounds(ss.map(s=>[s.lat,s.lon])),{padding:[45,45],maxZoom,animate:true})}
 function toggleMenu(body,arrow,button){const open=q(body).classList.contains('hidden');q(body).classList.toggle('hidden',!open);q(arrow).textContent=open?'⌄':'›';q(button).setAttribute('aria-expanded',String(open))}
@@ -101,6 +175,19 @@ function getAreaName(f,fb){const p=f.properties||{};for(const k of ['alcaldia','
 function classifyIndex(v){return v<=6?'Muy baja':v<=10?'Baja':v<=14?'Media':v<=18?'Alta':'Muy alta'}
 function classSlug(s){return cleanText(s).toLowerCase().replace(/\s+/g,'-')}
 function toBinary(v){return Number(v)===1?1:0}
+
+function normalizeAlcaldia(value){
+  const original=cleanText(value);
+  const key=original.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toUpperCase();
+  const names={
+    'ALVARO OBREGON':'ÁLVARO OBREGÓN',
+    'BENITO JUAREZ':'BENITO JUÁREZ',
+    'COYOACAN':'COYOACÁN',
+    'CUAUHTEMOC':'CUAUHTÉMOC'
+  };
+  return names[key]||original.toUpperCase();
+}
+
 function normalizeCCT(v){return cleanText(v).replace(/\s+/g,'').toUpperCase()}
 function cleanText(v){if(v===null||v===undefined)return'';const s=String(v).trim();return!s||s.toLowerCase()==='nan'?'':s}
 function normalizeText(v){return cleanText(v).replace(/\s+/g,' ')}
