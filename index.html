@@ -21,7 +21,7 @@
     <section class="panel">
       <h2>Visualización</h2>
       <label class="inline-check"><input type="checkbox" id="toggleSchools" checked><span>Mostrar escuelas</span></label>
-      <button id="modeMaintenance" class="mode-button active" type="button">Necesidades de mantenimiento</button>
+      <button id="modeMaintenance" class="mode-button active" type="button">Atención de Revisión Diagnóstico</button>
     </section>
 
     <section class="panel">
@@ -34,7 +34,7 @@
     </section>
 
     <section class="panel">
-      <h2>Necesidades de mantenimiento</h2><p class="hint">Selecciona una o varias variables. El resumen y el mapa mostrarán únicamente las escuelas que cumplen la selección.</p>
+      <h2>Atención de Revisión Diagnóstico</h2><p class="hint">Selecciona una o varias variables de Atención de Revisión. El resumen y el mapa mostrarán únicamente las escuelas que cumplen la selección.</p>
       <div id="maintenanceFilters" class="checklist"></div>
     </section>
 
@@ -46,6 +46,8 @@
         <label class="inline-check"><input type="radio" name="themeMode" value="programa_123"><span>1, 2, 3 por mi Escuela</span></label>
         <label class="inline-check"><input type="radio" name="themeMode" value="fam_potenciado"><span>FAM Potenciado 2025</span></label>
         <label class="inline-check"><input type="radio" name="themeMode" value="fam_reforzamiento"><span>FAM Reforzamiento estructural</span></label>
+        <label class="inline-check"><input type="radio" name="themeMode" value="programa_123_2026"><span>1, 2, 3 por mi Escuela 2026</span></label>
+        <label class="inline-check"><input type="radio" name="themeMode" value="alcaldia_apoyo"><span>Alcaldía</span></label>
         <label class="inline-check"><input type="radio" name="themeMode" value="ambas"><span>Escuelas con mantenimiento y reforzamiento</span></label>
         <button type="button" id="clearMejoras" class="submenu-clear">Quitar selección</button>
       </div>
@@ -72,6 +74,8 @@
         <a href="data/mantenimiento.csv" download>FAM Regular 2025 y 1, 2, 3 por mi Escuela</a>
         <a href="data/fam_potenciado_2025.csv" download>FAM Potenciado 2025</a>
         <a href="data/reforzamiento.csv" download>FAM Reforzamiento estructural</a>
+        <a href="data/123_por_mi_escuela_2026.csv" download>1, 2, 3 por mi Escuela 2026</a>
+        <a href="data/beneficiadas_alcaldia_iztapalapa.csv" download>Escuelas beneficiadas por Alcaldía</a>
       </div>
     </section>
 
@@ -89,7 +93,7 @@
   <button id="showSidebar" class="show-sidebar hidden" title="Mostrar menú">Menú</button>
   <section class="maparea">
     <div id="map"></div>
-    <div id="legend" class="legend"><div class="legend-head"><strong id="legendTitle">Necesidades de mantenimiento</strong><button id="toggleLegend">−</button></div><div id="legendBody"></div></div>
+    <div id="legend" class="legend"><div class="legend-head"><strong id="legendTitle">Atención de Revisión Diagnóstico</strong><button id="toggleLegend">−</button></div><div id="legendBody"></div></div>
     <div id="subsidenciaLegend" class="legend extra-legend hidden"><div class="legend-head"><strong>Subsidencia acumulada</strong><button id="toggleSubLegend">−</button></div><div id="subLegendBody"><div><span class="swatch square s-muy-bajo"></span>0 a 7 cm Muy bajo</div><div><span class="swatch square s-bajo"></span>8 a 15 cm Bajo</div><div><span class="swatch square s-medio"></span>16 a 23 cm Medio</div><div><span class="swatch square s-alto"></span>24 a 31 cm Alto</div><div><span class="swatch square s-muy-alto"></span>32 a 40 cm Muy alto</div></div></div>
     <aside id="detailPanel" class="detail-panel"><button id="closeDetail" class="close">×</button><h2 id="detailTitle">Seleccione una escuela</h2><div id="detailContent" class="detail-content"><p>Haga clic en un punto del mapa para consultar la información.</p></div></aside>
   </section>
@@ -97,6 +101,6 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="script.js?v=20260716-5"></script>
+<script src="script.js?v=20260716-7"></script>
 </body>
 </html>
